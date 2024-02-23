@@ -7,7 +7,6 @@ use serde_json;
 //use std::time::Duration;
 use systemstat::{saturating_sub_bytes, Platform, System};
 
-
 #[derive(Serialize)]
 struct Stats {
     battery: String,
@@ -19,20 +18,6 @@ struct Stats {
 
 fn main() {
     let sys = System::new();
-
-    // let string = match sys.networks() {
-    //     Ok(netifs) => {
-    //         format!("\nNetwork interface statistics:");
-    //         for netif in netifs.values() {
-    //             format!(
-    //                 "{} statistics: ({:?})",
-    //                 netif.name,
-    //                 sys.network_stats(&netif.name)
-    //             );
-    //         }
-    //     }
-    //     Err(x) => println!("\nNetworks: error: {}", x),
-    // }
 
     let battery = match sys.battery_life() {
         Ok(battery) => (battery.remaining_capacity * 100.0).to_string(),
@@ -53,16 +38,13 @@ fn main() {
         Err(x) => x.to_string(),
     };
 
-    // match sys.load_average() {
-    //     Ok(loadavg) => println!(
-    //         "\nLoad average: {} {} {}",
-    //         loadavg.one, loadavg.five, loadavg.fifteen
-    //     ),
-    //     Err(x) => println!("\nLoad average: error: {}", x),
-    // }
-
     let uptime = match sys.uptime() {
         Ok(uptime) => format!("{:?}", uptime),
+        Err(x) => x.to_string(),
+    };
+
+    let cpu_temp = match sys.cpu_temp() {
+        Ok(cpu_temp) => cpu_temp.to_string(),
         Err(x) => x.to_string(),
     };
 
@@ -83,17 +65,34 @@ fn main() {
     //     Err(x) => println!("\nCPU load: error: {}", x),
     // }
 
-    let cpu_temp = match sys.cpu_temp() {
-        Ok(cpu_temp) => cpu_temp.to_string(),
-        Err(x) => x.to_string(),
-    };
+    // match sys.load_average() {
+    //     Ok(loadavg) => println!(
+    //         "\nLoad average: {} {} {}",
+    //         loadavg.one, loadavg.five, loadavg.fifteen
+    //     ),
+    //     Err(x) => println!("\nLoad average: error: {}", x),
+    // }
+
+    // let string = match sys.networks() {
+    //     Ok(netifs) => {
+    //         format!("\nNetwork interface statistics:");
+    //         for netif in netifs.values() {
+    //             format!(
+    //                 "{} statistics: ({:?})",
+    //                 netif.name,
+    //                 sys.network_stats(&netif.name)
+    //             );
+    //         }
+    //     }
+    //     Err(x) => println!("\nNetworks: error: {}", x),
+    // }
 
     let json = serde_json::to_string(&Stats {
-        battery: battery,
-        ac: ac,
-        memory: memory,
-        uptime: uptime,
-        cpu_temp: cpu_temp,
+        battery,
+        ac,
+        memory,
+        uptime,
+        cpu_temp,
     })
     .expect("Serialization failed");
 
