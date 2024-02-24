@@ -70,7 +70,10 @@ impl StatServer {
         };
 
         Stats {
-            power: Power { percent, ac_power },
+            power: Power { 
+                percent,
+                ac_power 
+            },
             memory: Memory {
                 mem_used,
                 mem_total,
@@ -89,7 +92,7 @@ fn main() {
         
         println!("{}", to_json(&mut s));
         
-        std::thread::sleep(Duration::new(1, 0));
+        std::thread::sleep(Duration::new(0, 500_000_000));
     }
 }
 
