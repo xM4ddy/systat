@@ -1,10 +1,9 @@
 extern crate systemstat;
 
-//use std::thread;
-//use std::time::Duration;
+use simple_websockets::{Event, Responder};
+use std::collections::HashMap;
 use serde::Serialize;
 use serde_json;
-use std::time::Duration;
 use systemstat::{saturating_sub_bytes, Platform, System};
 
 struct StatServer {
@@ -70,9 +69,9 @@ impl StatServer {
         };
 
         Stats {
-            power: Power { 
-                percent,
-                ac_power 
+            power: Power {
+                percent, 
+                ac_power
             },
             memory: Memory {
                 mem_used,
@@ -85,56 +84,34 @@ impl StatServer {
 }
 
 fn main() {
+    let event_hub = simple_websockets::launch(8080)
+        .expect("failed to listen on port 8080");
+    let mut clients: HashMap<u64, Responder> = HashMap::new();
+
     let stat = StatServer::new();
 
+    
     loop {
         let mut s = stat.stats();
-        
-        println!("{}", to_json(&mut s));
-        
-        std::thread::sleep(Duration::new(0, 500_000_000));
+
+        match event_hub.poll_event() {
+            Event::Connect(client_id, responder) => {
+                println!("A client connected with id #{}", client_id);
+                clients.insert(client_id, responder);
+            },
+            Event::Disconnect(client_id) => {
+                println!("Client #{} disconnected.", client_id);
+                clients.remove(&client_id);
+            },
+            Event::Message(client_id, message) => {
+                println!("Received a message from client #{}: {:?}", client_id, message);
+                let responder = clients.get(&client_id).unwrap();
+                responder.send(simple_websockets::Message::Text(to_json(&mut s)));
+            },
+        }
     }
 }
 
 fn to_json(stats: &mut Stats) -> String {
     serde_json::to_string(stats).expect("Serialization failed")
 }
-
-// match sys.cpu_load_aggregate() {
-//     Ok(cpu) => {
-//         println!("\nMeasuring CPU load...");
-//         thread::sleep(Duration::from_secs(1));
-//         let cpu = cpu.done().unwrap();
-//         println!(
-//             "CPU load: {}% user, {}% nice, {}% system, {}% intr, {}% idle ",
-//             cpu.user * 100.0,
-//             cpu.nice * 100.0,
-//             cpu.system * 100.0,
-//             cpu.interrupt * 100.0,
-//             cpu.idle * 100.0
-//         );
-//     }
-//     Err(x) => println!("\nCPU load: error: {}", x),
-// }
-
-// match sys.load_average() {
-//     Ok(loadavg) => println!(
-//         "\nLoad average: {} {} {}",
-//         loadavg.one, loadavg.five, loadavg.fifteen
-//     ),
-//     Err(x) => println!("\nLoad average: error: {}", x),
-// }
-
-// let string = match sys.networks() {
-//     Ok(netifs) => {
-//         format!("\nNetwork interface statistics:");
-//         for netif in netifs.values() {
-//             format!(
-//                 "{} statistics: ({:?})",
-//                 netif.name,
-//                 sys.network_stats(&netif.name)
-//             );
-//         }
-//     }
-//     Err(x) => println!("\nNetworks: error: {}", x),
-// }
