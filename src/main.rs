@@ -1,10 +1,14 @@
 extern crate systemstat;
 
-use simple_websockets::{Event, Responder};
-use std::collections::HashMap;
 use serde::Serialize;
 use serde_json;
+use simple_websockets::{Event, Message, Responder};
+use std::collections::HashMap;
 use systemstat::{saturating_sub_bytes, Platform, System};
+
+type WrappedFloat = Result<f64, String>;
+type WrappedBool = Result<bool, String>;
+type WrappedInt = Result<u64, String>;
 
 struct StatServer {
     sys: System,
@@ -14,20 +18,20 @@ struct StatServer {
 struct Stats {
     power: Power,
     memory: Memory,
-    uptime: String,
-    cpu_temp: String,
+    uptime: WrappedInt,
+    cpu_temp: WrappedFloat,
 }
 
 #[derive(Serialize)]
 struct Power {
-    percent: String,
-    ac_power: String,
+    percent: WrappedFloat,
+    ac_power: WrappedBool,
 }
 
 #[derive(Serialize)]
 struct Memory {
-    mem_used: String,
-    mem_total: String,
+    mem_used: WrappedFloat,
+    mem_total: WrappedFloat,
 }
 
 impl StatServer {
@@ -38,41 +42,47 @@ impl StatServer {
     }
 
     fn stats(self: &Self) -> Stats {
-        let percent = match self.sys.battery_life() {
-            Ok(battery) => (battery.remaining_capacity * 100.0).to_string(),
-            Err(x) => x.to_string(),
+        let percent: WrappedFloat = match self.sys.battery_life() {
+            Ok(battery) => Ok(battery.remaining_capacity as f64 * 100.0),
+            Err(x) => Err(x.to_string()),
         };
 
-        let ac_power = match self.sys.on_ac_power() {
-            Ok(power) => power.to_string(),
-            Err(x) => x.to_string(),
+        let ac_power: WrappedBool = match self.sys.on_ac_power() {
+            Ok(power) => Ok(power),
+            Err(x) => Err(x.to_string()),
         };
 
-        let mem_used = match self.sys.memory() {
-            Ok(mem) => saturating_sub_bytes(mem.total, mem.free).to_string(),
-            Err(x) => x.to_string(),
+        let mem_used: WrappedFloat = match self.sys.memory() {
+            Ok(mem) => Ok(saturating_sub_bytes(mem.total, mem.free)
+                .to_string()
+                .replace(" GB", "")
+                .parse::<f64>()
+                .unwrap()),
+            Err(x) => Err(x.to_string()),
         };
 
-        let mem_total = match self.sys.memory() {
-            Ok(mem) => mem.total.to_string(),
-            Err(x) => x.to_string(),
+        let mem_total: WrappedFloat = match self.sys.memory() {
+            Ok(mem) => Ok(mem
+                .total
+                .to_string()
+                .replace(" GB", "")
+                .parse::<f64>()
+                .unwrap()),
+            Err(x) => Err(x.to_string()),
         };
 
-        let uptime = match self.sys.uptime() {
-            Ok(uptime) => format!("{:?}", uptime),
-            Err(x) => x.to_string(),
+        let uptime: WrappedInt = match self.sys.uptime() {
+            Ok(uptime) => Ok(uptime.as_secs()),
+            Err(x) => Err(x.to_string()),
         };
 
-        let cpu_temp = match self.sys.cpu_temp() {
-            Ok(cpu_temp) => cpu_temp.to_string(),
-            Err(x) => x.to_string(),
+        let cpu_temp: WrappedFloat = match self.sys.cpu_temp() {
+            Ok(cpu_temp) => Ok(cpu_temp.into()),
+            Err(x) => Err(x.to_string()),
         };
 
         Stats {
-            power: Power {
-                percent, 
-                ac_power
-            },
+            power: Power { percent, ac_power },
             memory: Memory {
                 mem_used,
                 mem_total,
@@ -84,13 +94,11 @@ impl StatServer {
 }
 
 fn main() {
-    let event_hub = simple_websockets::launch(8080)
-        .expect("failed to listen on port 8080");
+    let event_hub = simple_websockets::launch(8080).expect("failed to listen on port 8080");
     let mut clients: HashMap<u64, Responder> = HashMap::new();
 
     let stat = StatServer::new();
 
-    
     loop {
         let mut s = stat.stats();
 
@@ -98,16 +106,18 @@ fn main() {
             Event::Connect(client_id, responder) => {
                 println!("A client connected with id #{}", client_id);
                 clients.insert(client_id, responder);
-            },
+            }
             Event::Disconnect(client_id) => {
                 println!("Client #{} disconnected.", client_id);
                 clients.remove(&client_id);
-            },
+            }
             Event::Message(client_id, message) => {
-                println!("Received a message from client #{}: {:?}", client_id, message);
-                let responder = clients.get(&client_id).unwrap();
-                responder.send(simple_websockets::Message::Text(to_json(&mut s)));
-            },
+                if let Message::Text(str) = message {
+                    println!("Received a message from client #{}: {}", client_id, str);
+                    let responder = clients.get(&client_id).unwrap();
+                    responder.send(simple_websockets::Message::Text(to_json(&mut s)));
+                }
+            }
         }
     }
 }
